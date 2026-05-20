@@ -57,13 +57,10 @@ import { MetricsHistory } from './entities/metrics-history.entity';
           Report,
           MetricsHistory,
         ],
-        synchronize: false,
+        synchronize: true,
         namingStrategy: new SnakeNamingStrategy(),
         logging: config.get<string>('NODE_ENV') === 'development',
-        ssl:
-          config.get<string>('NODE_ENV') === 'production'
-            ? { rejectUnauthorized: false }
-            : false,
+        ssl: config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
       }),
     }),
 
