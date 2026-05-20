@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    app: greenpulse
+    environment: development
+
+# ─────────────────────────────────────────
+# Règles d'alerte
+# ─────────────────────────────────────────
+rule_files:
+  - "rules/*.yml"
+
+# ─────────────────────────────────────────
+# Cibles de scraping
+# ─────────────────────────────────────────
+scrape_configs:
+  # Backend NestJS — métriques applicatives
+  - job_name: greenpulse-backend
+    static_configs:
+      - targets: ['backend:9091']
+    metrics_path: /metrics
+
+  # PostgreSQL exporter
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Node system metrics (optionnel)
+  - job_name: node-exporter
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Prometheus lui-même
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

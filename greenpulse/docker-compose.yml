@@ -1,0 +1,221 @@
+version: '3.9'
+
+name: greenpulse
+
+services:
+  # ─────────────────────────────────────────
+  # FRONTEND — React + Vite
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: greenpulse-frontend
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./apps/frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:3001
+      - VITE_WS_URL=ws://localhost:3001
+    depends_on:
+      - backend
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # BACKEND — NestJS API
+  # ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: greenpulse-backend
+    ports:
+      - '3001:3001'
+      - '9091:9091'  # Prometheus metrics
+    volumes:
+      - ./apps/backend:/app
+      - /app/node_modules
+      - pdf-reports:/app/reports
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DATABASE_URL=postgresql://greenpulse:${POSTGRES_PASSWORD:-greenpulse123}@postgres:5432/greenpulse
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET:-supersecretkey_changeme_in_production}
+      - JWT_EXPIRY=${JWT_EXPIRY:-7d}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      - FRONTEND_URL=http://localhost:3000
+      - PROMETHEUS_METRICS_PORT=9091
+      - MAX_CONCURRENT_SCANS=${MAX_CONCURRENT_SCANS:-3}
+      - SCAN_TIMEOUT_MS=${SCAN_TIMEOUT_MS:-120000}
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+      - SMTP_SECURE=false
+      - EMAIL_FROM=GreenPulse <noreply@greenpulse.io>
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3001/api/health/live || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # POSTGRESQL — Base de données principale
+  # ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: greenpulse-postgres
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRES_DB=greenpulse
+      - POSTGRES_USER=greenpulse
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-greenpulse123}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./infrastructure/postgres/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U greenpulse -d greenpulse']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # REDIS — Cache & queues
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: greenpulse-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # PROMETHEUS — Collecte de métriques
+  # ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: greenpulse-prometheus
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/prometheus/rules:/etc/prometheus/rules
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # GRAFANA — Dashboards de monitoring
+  # ─────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: greenpulse-grafana
+    ports:
+      - '3002:3000'
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3002
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # POSTGRES EXPORTER — Métriques PostgreSQL
+  # ─────────────────────────────────────────
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: greenpulse-postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://greenpulse:${POSTGRES_PASSWORD:-greenpulse123}@postgres:5432/greenpulse?sslmode=disable
+    depends_on:
+      - postgres
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+  # node-exporter désactivé sur Docker Desktop Windows (mount rslave non supporté)
+
+  # ─────────────────────────────────────────
+  # MAILHOG — Serveur SMTP local pour dev
+  # ─────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: greenpulse-mailhog
+    ports:
+      - '1025:1025'   # SMTP
+      - '8025:8025'   # Web UI
+    networks:
+      - greenpulse-network
+    restart: unless-stopped
+
+# ─────────────────────────────────────────
+# VOLUMES
+# ─────────────────────────────────────────
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  pdf-reports:
+    driver: local
+
+# ─────────────────────────────────────────
+# NETWORKS
+# ─────────────────────────────────────────
+networks:
+  greenpulse-network:
+    driver: bridge

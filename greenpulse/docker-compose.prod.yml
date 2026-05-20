@@ -1,0 +1,89 @@
+version: '3.9'
+
+name: greenpulse-prod
+
+services:
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+      target: production
+    container_name: greenpulse-frontend-prod
+    ports:
+      - '80:80'
+      - '443:443'
+    depends_on:
+      - backend
+    networks:
+      - greenpulse-network
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: greenpulse-backend-prod
+    ports:
+      - '3001:3001'
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - greenpulse-network
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+      replicas: 2   # Scalabilité horizontale
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: greenpulse-postgres-prod
+    environment:
+      - POSTGRES_DB=greenpulse
+      - POSTGRES_USER=greenpulse
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U greenpulse']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - greenpulse-network
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: greenpulse-redis-prod
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks:
+      - greenpulse-network
+    restart: always
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  greenpulse-network:
+    driver: bridge

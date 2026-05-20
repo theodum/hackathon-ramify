@@ -1,0 +1,170 @@
+groups:
+  # ─────────────────────────────────────────────────────────────────────────
+  # GreenPulse Application Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: greenpulse_application
+    interval: 1m
+    rules:
+
+      # Score global Green IT trop bas
+      - alert: GreenPulseScoreLow
+        expr: greenpulse_audit_score{category="global"} < 50
+        for: 15m
+        labels:
+          severity: warning
+          team: greenpulse
+        annotations:
+          summary: "Score Green IT global faible ({{ $labels.instance }})"
+          description: >
+            Le score Green IT global est de {{ $value | humanize }} (< 50) depuis plus de 15 minutes.
+            Action requise : relancer un audit et appliquer les recommandations prioritaires.
+
+      # Émissions CO2 trop élevées
+      - alert: GreenPulseCo2High
+        expr: greenpulse_co2_estimated_grams > 2000
+        for: 0m
+        labels:
+          severity: critical
+          team: greenpulse
+        annotations:
+          summary: "Émissions CO2 estimées élevées ({{ $labels.instance }})"
+          description: >
+            Les émissions CO2 estimées sont de {{ $value | humanize }}g/jour (seuil : 2000g).
+            Vérifiez l'utilisation des ressources cloud et activez les optimisations d'énergie.
+
+      # Backend non accessible
+      - alert: GreenPulseBackendDown
+        expr: up{job="greenpulse-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: greenpulse
+        annotations:
+          summary: "Backend GreenPulse inaccessible ({{ $labels.instance }})"
+          description: >
+            Le backend GreenPulse ne répond plus depuis {{ $value }} minute(s).
+            Vérifiez l'état du conteneur et les logs avec `docker logs greenpulse-backend`.
+
+      # Taux d'erreur HTTP 5xx élevé
+      - alert: GreenPulseHighErrorRate
+        expr: >
+          sum(rate(greenpulse_http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(greenpulse_http_requests_total[5m])) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: greenpulse
+        annotations:
+          summary: "Taux d'erreur HTTP 5xx élevé"
+          description: >
+            Le taux d'erreur 5xx est de {{ $value | humanizePercentage }} (seuil : 5%).
+            Consultez les logs backend pour identifier la cause.
+
+      # Latence P95 élevée
+      - alert: GreenPulseHighLatency
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(greenpulse_http_request_duration_ms_bucket[5m])) by (le)
+          ) > 2000
+        for: 5m
+        labels:
+          severity: warning
+          team: greenpulse
+        annotations:
+          summary: "Latence P95 élevée sur l'API GreenPulse"
+          description: >
+            La latence P95 est de {{ $value | humanize }}ms (seuil : 2000ms) depuis 5 minutes.
+            Vérifiez les requêtes lentes et l'état de la base de données.
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Infrastructure Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: greenpulse_infrastructure
+    interval: 1m
+    rules:
+
+      # Connexions PostgreSQL trop nombreuses
+      - alert: PostgresHighConnections
+        expr: >
+          pg_stat_activity_count
+          /
+          pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "PostgreSQL : connexions > 80% du maximum"
+          description: >
+            Le nombre de connexions actives représente {{ $value | humanize }}% du maximum configuré.
+            Envisagez d'augmenter `max_connections` ou d'utiliser PgBouncer.
+
+      # Mémoire Redis élevée
+      - alert: RedisMemoryHigh
+        expr: >
+          redis_memory_used_bytes
+          /
+          redis_memory_max_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Redis : utilisation mémoire > 80%"
+          description: >
+            Redis utilise {{ $value | humanize }}% de sa mémoire maximale configurée (256MB).
+            Vérifiez la politique d'éviction et envisagez d'augmenter `maxmemory`.
+
+      # PostgreSQL down
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "PostgreSQL inaccessible"
+          description: >
+            PostgreSQL ne répond plus. Les audits et l'authentification sont hors service.
+
+      # Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Redis inaccessible"
+          description: >
+            Redis ne répond plus. Les queues de jobs et le cache sont hors service.
+
+      # CPU élevé sur le backend
+      - alert: BackendHighCPU
+        expr: >
+          rate(process_cpu_seconds_total{job="greenpulse-backend"}[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "CPU backend GreenPulse élevé ({{ $value | humanize }}%)"
+          description: >
+            Le CPU du processus backend dépasse 80% depuis 10 minutes.
+            Vérifiez les audits en cours et les éventuels scans Puppeteer bloquants.
+
+      # Mémoire heap Node.js élevée
+      - alert: BackendHighMemory
+        expr: >
+          process_resident_memory_bytes{job="greenpulse-backend"}
+          / 1024 / 1024 > 800
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Mémoire backend GreenPulse élevée ({{ $value | humanize }}MB)"
+          description: >
+            La mémoire résidente du backend dépasse 800MB depuis 5 minutes.
+            Possible fuite mémoire ou accumulation de résultats de scan non libérés.
