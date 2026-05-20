@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Save, RefreshCw, Bell, Shield, Globe, Cpu } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
@@ -12,7 +12,8 @@ export function SettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const sections = [
+  type Field = { label: string; type: string; value: string; placeholder?: string; options?: string[] };
+  const sections: { icon: React.ElementType; title: string; desc: string; fields: Field[] }[] = [
     {
       icon: Globe, title: 'Projet cible', desc: 'Configuration des URLs et endpoints à analyser',
       fields: [

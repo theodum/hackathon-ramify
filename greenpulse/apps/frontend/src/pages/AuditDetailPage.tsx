@@ -332,7 +332,7 @@ export function AuditDetailPage() {
           ) : (
             <button
               onClick={runAudit}
-              disabled={audit.status === 'running'}
+              disabled={false}
               className="flex items-center gap-2 text-sm bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white px-3 py-2 rounded-lg transition-colors"
             >
               <Play size={14} />
