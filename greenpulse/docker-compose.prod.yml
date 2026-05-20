@@ -1,5 +1,3 @@
-version: '3.9'
-
 name: greenpulse-prod
 
 services:
@@ -11,17 +9,11 @@ services:
     container_name: greenpulse-frontend-prod
     ports:
       - '80:80'
-      - '443:443'
     depends_on:
       - backend
     networks:
       - greenpulse-network
     restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 128M
 
   backend:
     build:
@@ -33,10 +25,22 @@ services:
       - '3001:3001'
     environment:
       - NODE_ENV=production
+      - PORT=3001
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - JWT_SECRET=${JWT_SECRET}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - JWT_EXPIRY=${JWT_EXPIRY:-7d}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY:-30d}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      - ANTHROPIC_MAX_TOKENS=${ANTHROPIC_MAX_TOKENS:-4096}
+      - FRONTEND_URL=${FRONTEND_URL:-http://162.19.115.3}
+      - REPORT_STORAGE_PATH=${REPORT_STORAGE_PATH:-/tmp/reports}
+      - MAX_CONCURRENT_SCANS=${MAX_CONCURRENT_SCANS:-3}
+      - SCAN_TIMEOUT_MS=${SCAN_TIMEOUT_MS:-120000}
+      - LIGHTHOUSE_CHROME_FLAGS=${LIGHTHOUSE_CHROME_FLAGS:---no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage}
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,12 +49,6 @@ services:
     networks:
       - greenpulse-network
     restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-      replicas: 2   # Scalabilité horizontale
 
   postgres:
     image: postgres:16-alpine
@@ -58,7 +56,7 @@ services:
     environment:
       - POSTGRES_DB=greenpulse
       - POSTGRES_USER=greenpulse
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-GreenPulse2024!}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -73,7 +71,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: greenpulse-redis-prod
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
     networks:
