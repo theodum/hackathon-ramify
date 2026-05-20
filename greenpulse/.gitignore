@@ -42,6 +42,8 @@ backups/
 # ── Generated reports (PDFs) ─────────────────────────────────────────────────
 reports/
 *.pdf
+# Keep backend source reports module
+!apps/backend/src/reports/
 
 # ── Test coverage ─────────────────────────────────────────────────────────────
 coverage/
