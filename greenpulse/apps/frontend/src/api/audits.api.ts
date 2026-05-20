@@ -79,7 +79,7 @@ export const auditsApi = {
       }
     })();
 
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const baseUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
     const url = new URL(`${baseUrl}/api/audits/${id}/status`);
     if (token) {
       url.searchParams.set('token', token);
