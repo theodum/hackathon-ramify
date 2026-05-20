@@ -29,12 +29,9 @@ export function getDatabaseConfig(config: ConfigService): TypeOrmModuleOptions {
       Report,
       MetricsHistory,
     ],
-    synchronize: config.get<string>('NODE_ENV') === 'development',
+    synchronize: true,
     logging: config.get<string>('NODE_ENV') === 'development',
-    ssl:
-      config.get<string>('NODE_ENV') === 'production'
-        ? { rejectUnauthorized: false }
-        : false,
+    ssl: config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
     migrations: ['dist/migrations/*.js'],
     migrationsRun: false,
   };
